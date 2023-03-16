@@ -1,3 +1,8 @@
+# model files
+*.pt
+*.onnx
+
+
 # Output directories
 outputs/
 multirun/
