@@ -53,42 +53,48 @@ def decode(token_dists):
     return batch_tokens, batch_probs
 
 
-def img_preprocess(img_orig, device=torch.device("cpu"), nH=32, nW=128):
+def img_preprocess(img_orig, nH=32, nW=128):
     # img_orig is a numpy array from cv2.imread(img_path)
     original_image = img_orig[:, :, ::-1]
 
     resized_image = cv2.resize(original_image, [nW, nH], interpolation=cv2.INTER_CUBIC)
     resized_image = (resized_image - 0.5 * 255) / (0.5 * 255)
 
-    image = torch.as_tensor(resized_image.astype("float32").transpose(2, 0, 1)).unsqueeze(0).to(device)
+    image = torch.as_tensor(resized_image.astype("float32").transpose(2, 0, 1)).unsqueeze(0)
 
     return image
 
-def batch_inference(images, model):
+def batch_inference(images, model, batch_size, device):
 
-    # pre process those images to resize them to the tensor input
-    input_tensors = torch.zeros([len(images), 3, 32, 128])
-
-    for i, image in enumerate(images):
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        img_tensor = img_preprocess(image)
-
-        input_tensors[i, :,:,:] = img_tensor
-
-    # input_tensors = torch.tensor(input_tensors)
-
-    with torch.no_grad():  
-        start = time.time()
-        logits = model(input_tensors)
-        end = time.time()
-
-    print("parseq")
-    print(end-start)
-
-    pred = logits.softmax(-1)
-    label, confidence = decode(pred)
+    N = len(images)
+    n_batch = N//batch_size + 1
+    labels = []
+    Total_time = 0
+    for i in range(n_batch):
+        # print(list(range((i-1)*batch_size,batch_size*i)))
+        if batch_size*(i+1) <= N:
+            input_holder = torch.zeros(batch_size, 3, 32, 128)
+            imgs_tmp = images[(i)*batch_size:batch_size*(i+1)]
+        else:
+            input_holder = torch.zeros(N-(n_batch-1)*batch_size, 3, 32, 128)
+            imgs_tmp = images[(i)*batch_size:N]
         
-    return label
+        # print(input_holder.size())
+        for j in range(len(imgs_tmp)):
+            image = cv2.cvtColor(imgs_tmp[j], cv2.COLOR_BGR2RGB)        
+            img_tensor = img_preprocess(image)
+            input_holder[j, :, :, :] = img_tensor[:,:,:]
+            
+        start = time.time()
+        with torch.no_grad():  
+            logits = model(input_holder.to(device))
+        end = time.time()
+        Total_time += (end-start)
+        pred = logits.softmax(-1)
+        label, confidence = decode(pred)
+        labels.append(label)
+    print("The total time cost is {}".format(Total_time))
+    return labels
 
 
 if __name__ == "__main__":
@@ -96,10 +102,10 @@ if __name__ == "__main__":
 
     img_paths = [os.path.join(img_folder, x) for x in os.listdir(img_folder) if x.endswith("jpg")]
 
-    images = [cv2.imread(x) for x in img_paths[:5]]
+    images = [cv2.imread(x) for x in img_paths]
 
     ts_model = torch.jit.load("parseq_cpu_dynamic_torchscript.pt")
 
-    labels = batch_inference(images, ts_model)
+    labels = batch_inference(images, ts_model, batch_size=16, device=torch.device("cpu"))
 
     print(labels)

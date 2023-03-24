@@ -1,7 +1,9 @@
 # model files
 *.pt
 *.onnx
-
+*.zip
+time_test_batch_processing/test_dataset/
+implement_with_batch_processing/time_test/
 
 # Output directories
 outputs/
